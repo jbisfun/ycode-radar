@@ -2,7 +2,9 @@
 -- "radar: report" to file the editor selection with a note.
 -- Reports live in $PULL_ROOT/issues/radar.db and go through the `radar` CLI.
 
-local REFRESH_SECONDS = 5
+-- Every open of radar.db rewrites a few RocksDB files, so poll gently; filing and
+-- closing refresh right away.
+local REFRESH_SECONDS = 30
 local S = { reports = nil, error = nil, message = nil, root = nil }
 
 local function walk_up(dir)
