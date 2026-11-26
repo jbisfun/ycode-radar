@@ -1,10 +1,12 @@
 -- radar in ycode: open reports in a panel (click one to jump to its line), and
 -- "radar: report" to file the editor selection with a note.
--- Reports live in $PULL_ROOT/issues/radar.db and go through the `radar` CLI.
+-- Reports are cpull issues anchored to a line of code, filed in the repo they
+-- point at; everything goes through `pull cpull report` (pull pins its identity
+-- into the repos and runs `cpull report`).
 
--- Every open of radar.db rewrites a few RocksDB files, so poll gently; filing and
--- closing refresh right away.
-local REFRESH_SECONDS = 30
+-- Listing reads every repo's cpull/events, so poll gently; filing and closing
+-- refresh right away.
+local REFRESH_SECONDS = 15
 local S = { reports = nil, error = nil, message = nil, root = nil }
 
 local function walk_up(dir)
@@ -34,9 +36,12 @@ local function q(s) return "'" .. tostring(s):gsub("'", "'\\''") .. "'" end
 local function radar(args, callback)
     local argv = {}
     for i, a in ipairs(args) do argv[i] = q(a) end
-    local cmd = "cd " .. q(S.root) .. " && PULL_ROOT=" .. q(S.root) .. " radar " .. table.concat(argv, " ")
+    local cmd = "cd " .. q(S.root) .. " && PULL_ROOT=" .. q(S.root) .. " pull cpull report " .. table.concat(argv, " ")
     ycode.spawn(cmd, callback)
 end
+
+-- reports are known by a cpull issue id; its first 8 characters are unique enough
+local function short(r) return (r.id or ""):sub(1, 8) end
 
 local function strip_nulls(t)
     for k, v in pairs(t) do
@@ -56,14 +61,14 @@ local function refresh()
         if okj and type(data) == "table" then
             S.reports, S.error = strip_nulls(data), nil
         else
-            S.error = "radar list: bad json"
+            S.error = "cpull report list: bad json"
         end
     end)
 end
 
 local function close_report(r)
-    radar({ "close", tostring(r.number) }, function(ok, out)
-        S.message = ok and ("closed #" .. r.number) or out
+    radar({ "close", r.id }, function(ok, out)
+        S.message = ok and ("closed " .. short(r)) or out:gsub("%s+$", "")
         refresh()
     end)
 end
@@ -71,10 +76,10 @@ end
 local function report_row(r)
     local summary = r.note or r.quote or r.line_text or ""
     return { "list_item", r.file .. ":" .. r.line, detail = summary:gsub("%s+", " "),
-        tooltip = "#" .. r.number .. "  " .. (r.line_text or ""):gsub("^%s+", ""),
+        tooltip = short(r) .. "  " .. (r.title or "") .. "\n" .. (r.line_text or ""):gsub("^%s+", ""),
         start = { "icon", name = "warning", color = "warning" },
-        end_ = { "text", "#" .. r.number, size = "small", color = "muted" },
-        end_hover = { "icon_button", icon = "check", tooltip = "Close #" .. r.number,
+        end_ = { "text", short(r), size = "small", color = "muted" },
+        end_hover = { "icon_button", icon = "check", tooltip = "Close " .. short(r),
             on_click = function() close_report(r) end },
         on_click = function()
             ycode.open(S.root .. "/" .. r.repo .. "/" .. r.file, r.line)
@@ -135,7 +140,7 @@ end
 local function open_report_window(target)
     local function file(w)
         local note = (w.text("note") or ""):gsub("^%s+", ""):gsub("%s+$", "")
-        local args = { "add", target.repo, target.file, tostring(target.line), "--source", "ycode" }
+        local args = { target.repo, target.file, tostring(target.line), "--source", "ycode" }
         if note ~= "" then args[#args + 1] = "--note"; args[#args + 1] = note end
         if target.quote then args[#args + 1] = "--quote"; args[#args + 1] = target.quote end
         -- `w` only lives for this callback; the result comes back through state.
