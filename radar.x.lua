@@ -1,8 +1,8 @@
 -- Line-anchored reports in ycode: open reports in a panel (click one to jump to its
 -- line), "radar: report" to file the editor selection with a note.
 -- Reports are cpull issues anchored to a line of code, filed in the repo they
--- point at; everything goes through `pull cpull report` (pull pins its identity
--- into the repos and runs `cpull report`).
+-- point at; everything goes through the `radar` CLI, which files them through
+-- cpull's API (the cpull job has to be running).
 --
 -- The panel follows the active editor: the reports on its file head the list, the
 -- one under the cursor highlighted, and "radar: next report" / "radar: previous
@@ -39,11 +39,11 @@ end
 
 local function q(s) return "'" .. tostring(s):gsub("'", "'\\''") .. "'" end
 
--- `pull cpull report ARGS`; `with_errors` folds stderr into the output (not for --json).
+-- `radar ARGS`; `with_errors` folds stderr into the output (not for --json).
 local function report_cmd(args, callback, with_errors)
     local argv = {}
     for i, a in ipairs(args) do argv[i] = q(a) end
-    local cmd = "cd " .. q(S.root) .. " && PULL_ROOT=" .. q(S.root) .. " pull cpull report " .. table.concat(argv, " ")
+    local cmd = "cd " .. q(S.root) .. " && PULL_ROOT=" .. q(S.root) .. " radar " .. table.concat(argv, " ")
     ycode.spawn(cmd .. (with_errors and " 2>&1" or ""), callback)
 end
 
@@ -80,7 +80,7 @@ local function refresh()
         if okj and type(data) == "table" then
             S.reports, S.error = strip_nulls(data), nil
         else
-            S.error = "cpull report list: bad json"
+            S.error = "radar list: bad json"
         end
     end)
 end
